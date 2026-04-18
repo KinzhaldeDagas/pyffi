@@ -1,23 +1,9 @@
 Version 2.2.6 - 2026-04-18
 
-Implementation pass summary:
+Implementations:
 - Applied a faithful TES4/Oblivion collision pipeline correction in SpellOptimizeCollisionGeometry.
 - Added schema-compatible Havok layer resolution to support both legacy `layer` and newer `havok_col_filter.layer` field layouts.
-- Hardened Oblivion clutter-layer detection to support both enum spellings (`CLUTTER` and `OL_CLUTTER`) without changing behavior intent.
+- Updated Oblivion clutter-layer detection to support both enum spellings (`CLUTTER` and `OL_CLUTTER`) without changing behavior intent.
 - Preserved static-collision MOPP gating while making the layer read path robust across NIF schema variants.
 - Modernized remaining deprecated logger.warn(...) calls to logger.warning(...) across pyffi modules.
-- Kept prior toaster pipeline fixes intact (patch generation, archive-member handling, path mapping safety).
-
-Build artifacts:
-- PyFFI-2.2.6-Installer.exe generated in C:\src\pyffi-develop.
-Version 2.2.5 - 2026-04-18
-
-Implementation pass summary:
 - Corrected installer versioning and release identity to 2.2.5.
-- Kept pipeline fidelity by continuing to package the existing root niftoaster.exe payload.
-- Optimized installer maintainability by centralizing version and path values in preprocessor defines.
-- Preserved install UX (Start Menu + optional desktop icon + post-install run) while reducing future edit surface.
-
-Build artifacts:
-- PyFFI-2.2.5-Installer.exe generated in C:\src\pyffi-develop.
-
