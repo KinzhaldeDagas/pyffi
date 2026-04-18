@@ -345,7 +345,7 @@ class SpellOptimizeGeometry(pyffi.spells.nif.NifSpell):
             if v_map[i] is not None:
                 v_map_inverse[v_map[i]] = i
             else:
-                self.toaster.logger.warn("unused vertex")
+                self.toaster.logger.warning("unused vertex")
         try:
             new_numvertices = max(v for v in v_map if v is not None) + 1
         except ValueError:
@@ -480,7 +480,7 @@ class SpellOptimizeGeometry(pyffi.spells.nif.NifSpell):
                 # remap of morph vertices works only if
                 # morph.num_vertices == len(v_map)
                 if morphdata.num_vertices != len(v_map):
-                    self.toaster.logger.warn(
+                    self.toaster.logger.warning(
                         "number of vertices in morph ({0}) does not match"
                         " number of vertices in shape ({1}):"
                         " resizing morph, graphical glitches might result"
@@ -747,7 +747,7 @@ class SpellReduceGeometry(SpellOptimizeGeometry):
     @classmethod
     def toastentry(cls, toaster):
         if not toaster.options["arg"]:
-            toaster.logger.warn(
+            toaster.logger.warning(
                 "must specify degree of reduction as argument "
                 "(e.g. 2 to reduce a little, 1 to reduce more, "
                 "0 to reduce even more, -0.1 is usually the highest "
@@ -949,6 +949,30 @@ class SpellOptimizeCollisionGeometry(pyffi.spells.nif.NifSpell):
             self.inspectblocktype(NifFormat.bhkPackedNiTriStripsShape)
             or self.inspectblocktype(NifFormat.bhkNiTriStripsShape))
 
+    @staticmethod
+    def _get_havok_layer_value(obj):
+        """Return Havok layer value across schema variants.
+
+        Older NIF schemas expose ``layer`` directly; newer schemas expose
+        ``havok_col_filter.layer``.
+        """
+        if hasattr(obj, "havok_col_filter") and hasattr(obj.havok_col_filter, "layer"):
+            return obj.havok_col_filter.layer
+        return getattr(obj, "layer", None)
+
+    @staticmethod
+    def _get_oblivion_clutter_layer_value():
+        """Return the Oblivion clutter layer enum value for both enum spellings."""
+        if hasattr(NifFormat.OblivionLayer, "CLUTTER"):
+            return NifFormat.OblivionLayer.CLUTTER
+        return getattr(NifFormat.OblivionLayer, "OL_CLUTTER", None)
+
+    @classmethod
+    def _is_oblivion_clutter_layer(cls, obj):
+        layer_value = cls._get_havok_layer_value(obj)
+        clutter_value = cls._get_oblivion_clutter_layer_value()
+        return (clutter_value is not None) and (layer_value == clutter_value)
+
     def branchinspect(self, branch):
         # only inspect the collision branches
         return isinstance(branch, (NifFormat.NiAVObject,
@@ -1075,7 +1099,7 @@ class SpellOptimizeCollisionGeometry(pyffi.spells.nif.NifSpell):
             return False
         elif (isinstance(branch, NifFormat.bhkRigidBody)
               and isinstance(branch.shape, NifFormat.bhkNiTriStripsShape)):
-            if branch.havok_col_filter.layer == NifFormat.OblivionLayer.CLUTTER:
+            if self._is_oblivion_clutter_layer(branch):
                 # packed collisions do not work for clutter
                 # so skip it
                 # see issue #3194017 reported by Gratis_monsta
@@ -1095,7 +1119,7 @@ class SpellOptimizeCollisionGeometry(pyffi.spells.nif.NifSpell):
                              NifFormat.bhkPackedNiTriStripsShape)):
             # packed collision without mopp
             # add a mopp to it if it is static
-            if any(sub_shape.havok_col_filter.layer != 1
+            if any(self._get_havok_layer_value(sub_shape) != 1
                    for sub_shape in branch.shape.get_sub_shapes()):
                 # no mopps for non-static objects
                 return False
@@ -1314,3 +1338,4 @@ class SpellOptimize(
         )):
     """Global fixer and optimizer spell."""
     SPELLNAME = "optimize"
+

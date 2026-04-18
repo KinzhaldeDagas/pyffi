@@ -762,7 +762,7 @@ class Toaster(object):
                 "option --patch-cmd can only be used with --patch")
         # multiprocessing available?
         if (multiprocessing is None) and self.options["jobs"] > 1:
-            self.logger.warn(
+            self.logger.warning(
                 "multiprocessing not supported on this platform")
             self.options["jobs"] = 1
         # update include and exclude types
@@ -1228,8 +1228,10 @@ class Toaster(object):
             # store the option (so spells can use it)
             self.options["sourcedir"] = sourcedir
 
-        # check that top starts with sourcedir
-        if not top.startswith(sourcedir):
+        # check that top is inside source directory using normalized paths
+        top_abs = os.path.abspath(top)
+        sourcedir_abs = os.path.abspath(sourcedir)
+        if os.path.commonpath((top_abs, sourcedir_abs)) != sourcedir_abs:
             raise ValueError(
                 "invalid --source-dir: %s does not start with %s"
                 % (top, sourcedir))
@@ -1238,8 +1240,8 @@ class Toaster(object):
         if ((not self.spellclass.READONLY) and (not dryrun)
                 and (not prefix) and (not createpatch)
                 and interactive and (not suffix) and (not destdir)):
-            self.logger.warn("This script will modify your files, in particular if something goes wrong it may destroy them.")
-            self.logger.warn("Make a backup of your files before running this script.")
+            self.logger.warning("This script will modify your files, in particular if something goes wrong it may destroy them.")
+            self.logger.warning("Make a backup of your files before running this script.")
             if not input("Are you sure that you want to proceed? [n/y] ") in ("y", "Y"):
                 self.logger.info("Script aborted by user.")
                 if pause:
@@ -1285,7 +1287,7 @@ class Toaster(object):
                 try:
                     archive_in = ARCHIVE_CLASS.Data(name=filename_in, mode='r')
                 except ValueError:
-                    self.logger.warn("archive format not recognized, skipped")
+                    self.logger.warning("archive format not recognized, skipped")
                     continue
                 # toast all members in the archive
                 # and save them to a temporary archive as we go
@@ -1296,10 +1298,30 @@ class Toaster(object):
                     file_out = tempfile.TemporaryFile()
                     archive_out = ARCHIVE_CLASS.Data(fileobj=file_out, mode='w')
                     for member in archive_in.get_members():
-                        self._toast(member)
+                        self._toast_member(member)
                         archive_out.add(member)
                     archive_out.close()
                 archive_in.close()
+
+    def _toast_member(self, member):
+        """Run toaster on an archive member by adapting it to a stream-like object."""
+        stream = getattr(member, "stream", member)
+        member_name = getattr(member, "name", getattr(stream, "name", "<archive-member>"))
+
+        class _ArchiveMemberStream(object):
+            def __init__(self, wrapped_stream, name):
+                self._wrapped_stream = wrapped_stream
+                self.name = name
+
+            def __getattr__(self, attr):
+                return getattr(self._wrapped_stream, attr)
+
+        # normalize position before inspect/read
+        try:
+            stream.seek(0)
+        except Exception:
+            pass
+        self._toast(_ArchiveMemberStream(stream, member_name))
 
     def _toast(self, stream):
         """Run toaster on particular stream and data.
@@ -1380,12 +1402,14 @@ class Toaster(object):
             if not self.options["sourcedir"]:
                 raise ValueError(
                     "--dest-dir specified without --source-dir")
-            if not head.startswith(self.options["sourcedir"]):
+            head_abs = os.path.abspath(head)
+            sourcedir_abs = os.path.abspath(self.options["sourcedir"])
+            if os.path.commonpath((head_abs, sourcedir_abs)) != sourcedir_abs:
                 raise ValueError(
                     "invalid --source-dir: %s does not start with %s"
                     % (filename, self.options["sourcedir"]))
-            head = head.replace(
-                self.options["sourcedir"], self.options["destdir"], 1)
+            rel_head = os.path.relpath(head_abs, sourcedir_abs)
+            head = os.path.join(self.options["destdir"], rel_head)
         return head, self.options["prefix"] + root + self.options["suffix"], ext
 
     def get_toast_stream(self, filename, test_exists=False):
@@ -1466,25 +1490,31 @@ class Toaster(object):
 
 
         # create a temporary file that won't get deleted when closed
-        self.options["suffix"] = ".tmp"
-        newfile = self.spellclass.get_toast_stream(self, stream.name)
+        newfile = tempfile.NamedTemporaryFile(suffix=".tmp", delete=False)
+        newfilename = newfile.name
         try:
             data.write(newfile)
         except: # not just Exception, also CTRL-C
             self.msg("write failed!!!")
+            newfile.close()
+            if os.path.exists(newfilename):
+                os.remove(newfilename)
             raise
         # use external diff command
         oldfile = stream
         oldfilename = oldfile.name
-        patchfilename = newfile.name[:-4] + ".patch"
+        patchfilename = os.path.splitext(newfilename)[0] + ".patch"
         # close all files before calling external command
         oldfile.close()
         newfile.close()
         self.msg("calling %s" % diffcmd)
-        subprocess.call([diffcmd, oldfilename, newfilename, patchfilename])
+        returncode = subprocess.call([diffcmd, oldfilename, newfilename, patchfilename])
+        if returncode:
+            raise RuntimeError("diff command failed with exit code %i" % returncode)
         # delete temporary file
         os.remove(newfilename)
 
 if __name__ == '__main__':
     import doctest
     doctest.testmod(optionflags=doctest.ELLIPSIS)
+

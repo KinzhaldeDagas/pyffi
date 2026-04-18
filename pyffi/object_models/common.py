@@ -395,7 +395,7 @@ class Float(BasicBase, EditableFloatSpinBox):
                                      self._value))
         except OverflowError:
             logger = logging.getLogger("pyffi.object_models")
-            logger.warn("float value overflow, writing NaN")
+            logger.warning("float value overflow, writing NaN")
             stream.write(struct.pack(data._byte_order + 'I',
                                      0x7fc00000))
 
@@ -734,4 +734,5 @@ class UndecodedData(BasicBase):
         :type stream: file
         """
         stream.write(self._value)
+
 
